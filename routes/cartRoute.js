@@ -30,7 +30,7 @@ const authenticateToken = (req, res, next) => {
 };
 // Protected GET route to fetch Cart
 // http://localhost:3010/cart/getcart/?user=Thavtest
-router.get('/getcart/', authenticateToken, async (req, res) => {
+router.get('/getcart/', async (req, res) => {
     const getuser = req.query.user;
     if (!getuser) {
         return res.status(400).json({ error: "Invalid input!" });
@@ -51,7 +51,7 @@ router.get('/getcart/', authenticateToken, async (req, res) => {
                         JOIN tbproduct AS p ON c.cart_productname = p.name
                         WHERE u.name = $1;
                         `;
-                        
+
         const getcart = await db.query(query, [getuser]);
         if (getcart.rows.length <= 0) {
             return res.status(404).json({ error: "Can't find cart!" });
@@ -63,34 +63,77 @@ router.get('/getcart/', authenticateToken, async (req, res) => {
     }
 });
 
+// fetching all carts
+router.get("/getallcarts", async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT 
+                u.name AS username,
+                c.cart_productname,
+                c.quantity,
+                c.total_price,
+                p.price AS product_price,
+                p.description,
+                p.photo
+            FROM tbcart c
+            JOIN tbuser u ON u.name = c.cart_username
+            JOIN tbproduct p ON p.name = c.cart_productname
+            ORDER BY c.cart_username, c.cart_productname;
+        `);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "No carts found." });
+        }
+
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error("Error fetching all carts:", err);
+        res.status(500).json({ error: "Internal server error." });
+    }
+});
+
+
 // Protected POST route to add a cart
 // http://localhost:3010/cart/addcart/
 router.post("/addcart/", authenticateToken, async (req, res) => {
     const { cart_username, cart_productname, quantity } = req.body;
 
     if (!cart_username || !cart_productname || !quantity) {
-        return res.status(400).json({ error: "Invalid Input!" });
+        return res.status(400).json({ error: "Invalid Input! Required fields are missing." });
     }
 
     try {
+        // ✅ Check if product exists & get price
+        const productCheckQuery = `SELECT price FROM tbproduct WHERE name = $1`;
+        const productCheck = await db.query(productCheckQuery, [cart_productname]);
+
+        if (productCheck.rows.length === 0) {
+            return res.status(404).json({ error: "Product not found!" });
+        }
+
+        const productPrice = productCheck.rows[0].price;
+
+        // ✅ Insert or Update cart
         const query = `
             INSERT INTO tbcart (cart_username, cart_productname, quantity, total_price)
-            VALUES ($1, $2::TEXT, $3::int, (SELECT price FROM tbproduct WHERE name = $2::TEXT) * $3::int)
+            VALUES ($1, $2, $3::int, $4::numeric * $3::int)
             ON CONFLICT (cart_username, cart_productname)
             DO UPDATE SET
-            quantity = tbcart.quantity + $3::int,
-            total_price = (SELECT price FROM tbproduct WHERE name = $2::TEXT) * (tbcart.quantity + $3::int)
-            RETURNING *;`;
+                quantity = tbcart.quantity + $3::int,
+                total_price = $4::numeric * (tbcart.quantity + $3::int)
+            RETURNING *;
+            `;
 
-        const newCart = await db.query(query, [cart_username, cart_productname, quantity]);
+        const newCart = await db.query(query, [cart_username, cart_productname, quantity, productPrice]);
 
-        if (newCart.rows.length <= 0) {
-            return res.status(500).json({ error: "Can't Insert the Cart!" });
+        if (newCart.rows.length === 0) {
+            return res.status(500).json({ error: "Failed to add/update cart!" });
         }
+
         res.status(200).json(newCart.rows[0]);
     } catch (err) {
-        console.error("Error Add:", err);
-        res.status(500).json({ error: "Internal error" });
+        console.error("Error adding to cart:", err);
+        res.status(500).json({ error: `Internal error: ${err.message}` });
     }
 });
 
@@ -98,44 +141,56 @@ router.post("/addcart/", authenticateToken, async (req, res) => {
 // Protected POST route to add a cart
 // http://localhost:3010/cart/updatecart/
 router.put("/updatecart/", authenticateToken, async (req, res) => {
+    console.log("Received body:", req.body);
     const { cart_username, cart_productname, quantity } = req.body;
 
     if (!cart_username || !cart_productname || quantity === undefined) {
         return res.status(400).json({ error: "Invalid Input!" });
     }
-
-    // Ensure quantity is treated as an integer
+ 
     const quantityValue = parseInt(quantity, 10);
-
     if (isNaN(quantityValue)) {
         return res.status(400).json({ error: "Quantity must be a valid number." });
     }
 
     try {
         if (quantityValue <= 0) {
-            // Remove item if quantity is 0
             const deleteQuery = `DELETE FROM tbcart WHERE cart_username = $1 AND cart_productname = $2`;
             await db.query(deleteQuery, [cart_username, cart_productname]);
             return res.status(200).json({ message: "Item removed from cart." });
         }
 
-        // Update quantity & total price
+        // First try to update existing cart item
         const updateQuery = `
             UPDATE tbcart
             SET quantity = $1::int,
-                total_price = (SELECT price FROM tbproduct WHERE name = tbcart.cart_productname) * $1::int
-            WHERE cart_username = $2 AND cart_productname = $3
-            RETURNING *;`;
+                total_price = p.price * $1::int
+            FROM tbproduct p
+            WHERE tbcart.cart_username = $2
+              AND tbcart.cart_productname = $3
+              AND p.name = tbcart.cart_productname
+            RETURNING tbcart.*;
+        `;
 
         const updatedCart = await db.query(updateQuery, [quantityValue, cart_username, cart_productname]);
 
-        if (updatedCart.rows.length === 0) {
-            return res.status(404).json({ error: "Cart item not found." });
+        if (updatedCart.rows.length > 0) {
+            return res.status(200).json(updatedCart.rows[0]);
         }
 
-        res.status(200).json(updatedCart.rows[0]);
+        // If not found, insert it as new cart
+        const insertQuery = `
+            INSERT INTO tbcart (cart_username, cart_productname, quantity, total_price)
+            VALUES ($1, $2::TEXT, $3::int, (SELECT price FROM tbproduct WHERE name = $2::TEXT) * $3::int)
+            RETURNING *;
+        `;
+
+        const newCart = await db.query(insertQuery, [cart_username, cart_productname, quantityValue]);
+
+        return res.status(201).json(newCart.rows[0]);
+
     } catch (err) {
-        console.error("Error updating cart:", err);
+        console.error("Error updating/adding cart:", err);
         res.status(500).json({ error: "Internal server error." });
     }
 });

@@ -106,8 +106,8 @@ router.post("/addcategory/",authenticateAdmin, upload.single("photo"), async (re
     }
 });
 
-// Protected GET route to fetch categories
-router.get("/getcategories/",authenticateToken, async (req, res) => {
+// Protected GET route to fetch all categories
+router.get("/getcategories/", async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const page = parseInt(req.query.page) || 1;
     const offset = (page - 1) * limit;
@@ -136,7 +136,8 @@ router.get("/getcategories/",authenticateToken, async (req, res) => {
     }
 });
 
-router.get("/getcategory/",authenticateToken, async (req, res) => {
+// get specefic category
+router.get("/getcategory/", async (req, res) => {
     const getid = req.query.id;
     if(!getid){
         return res.status(400).json({error: "Invalid input!"});

@@ -67,7 +67,7 @@ router.post("/checkout/", authenticateToken, async (req, res) => {
 
 // http://localhost:3010/receipt/getreceipts/?user=thav1
 // **Retrieve Purchase History (Receipts)**
-router.get("/getreceipt/", authenticateToken, async (req, res) => {
+router.get("/getreceipt/", async (req, res) => {
     const receipt_code = req.query.receipt_code;
 
     if (!receipt_code) {
@@ -85,6 +85,32 @@ router.get("/getreceipt/", authenticateToken, async (req, res) => {
         res.status(200).json(receipts.rows);
     } catch (err) {
         console.error("Error fetching receipt:", err);
+        res.status(500).json({ error: "Internal server error." });
+    }
+});
+
+// http://localhost:3010/receipt/getallreceipts?limit=10&page=${page}
+router.get("/getallreceipts", async (req, res) => {
+    const limit = parseInt(req.query.limit, 10) || 10;  // Default to 10 receipts per page
+    const page = parseInt(req.query.page, 10) || 1;     // Default to page 1
+    const offset = (page - 1) * limit;
+
+    try {
+        const query = `
+            SELECT * FROM tbreceipt
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2;
+        `;
+
+        const receipts = await db.query(query, [limit, offset]);
+
+        if (receipts.rows.length === 0) {
+            return res.status(404).json({ error: "No receipts found." });
+        }
+
+        res.status(200).json({ page, limit, receipts: receipts.rows });
+    } catch (err) {
+        console.error("Error fetching all receipts:", err);
         res.status(500).json({ error: "Internal server error." });
     }
 });

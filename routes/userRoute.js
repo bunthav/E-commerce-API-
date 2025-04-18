@@ -13,7 +13,7 @@ const secretKey = process.env.BEARERTOKEN;
 
 // Configure rate limiting
 const loginRateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    windowMs:  1000, // 15 minutes
     max: 3, // Limit each IP to 5 login attempts per windowMs
     message: { error: "Too many login attempts. Please try again later." },
     standardHeaders: true, // Sends rate limit info in headers
@@ -151,6 +151,7 @@ router.post("/registeruser/", loginRateLimiter, async (req, res) => {
 
 router.post("/loginuser/", loginRateLimiter, async (req, res) => {
     const { name, password, email } = req.body;
+    console.log("Incoming login body:", req.body);
 
     if ((!name && !email) || !password) {
         return res.status(400).json({ error: "Invalid input!" });
@@ -175,12 +176,15 @@ router.post("/loginuser/", loginRateLimiter, async (req, res) => {
         }
 
         const isPasswordValid = await bcrypt.compare(password, user.password);
+        const identifier = name || email;
+
         if (!isPasswordValid) {
-            await db.query("UPDATE tbuser SET failed_attempts = failed_attempts + 1 WHERE name = $1", [name]);
+            await db.query("UPDATE tbuser SET failed_attempts = failed_attempts + 1 WHERE name = $1 OR email = $1", [identifier]);
             return res.status(401).json({ error: "Invalid username or password." });
         }
 
-        await db.query("UPDATE tbuser SET failed_attempts = 0 WHERE name = $1", [name]);
+        await db.query("UPDATE tbuser SET failed_attempts = 0 WHERE name = $1 OR email = $1", [identifier]);
+
 
         const token = jwt.sign({ id: user.id, name: user.name, role: user.role }, secretKey, { expiresIn: "1h" });
 
@@ -197,7 +201,12 @@ router.post("/loginuser/", loginRateLimiter, async (req, res) => {
         return res.status(200).json({
             message: `Welcome, ${user.name}!`,
             token: token,
-            role: user.role
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            }
         });
     } catch (err) {
         console.error("Error during login:", err);

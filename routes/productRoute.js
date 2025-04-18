@@ -73,14 +73,14 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.get('/getproduct/', authenticateToken, async (req, res) =>{
-    const getid = req.query.id;
+router.get('/getproduct/', async (req, res) =>{
+    const getname = req.query.name;
     if(!getid){
         return res.status(400).json({error: "Invalid input!"});
     }
     try{
         const query = `select * from tbproduct WHERE id= $1;`;
-        const getProduct = await db.query(query,[getid]);
+        const getProduct = await db.query(query,[getname]);
         if(getProduct.rows.length <= 0){
             return res.status(404).json({error: "Can't find product!"});
         }
@@ -122,7 +122,7 @@ router.post("/addproduct/", authenticateAdmin, upload.single("photo"), async (re
 
 // Protected GET route to fetch products
 //http://localhost:3010/product/getproducts?limit=10&page=1
-router.get("/getproducts/", authenticateToken, async (req, res) => {
+router.get("/getproducts/", async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const page = parseInt(req.query.page) || 1;
     const offset = (page - 1) * limit;
@@ -219,7 +219,7 @@ router.delete("/deleteproduct/", authenticateAdmin, async (req, res) => {
     }
 
     try {
-        // Step 1: Get Photo Before Deleting
+        // Get Photo Before Deleting
         const getProduct = await db.query(`SELECT photo FROM tbproduct WHERE id = $1`, [getId]);
         if (getProduct.rows.length === 0) {
             return res.status(404).json({ error: "Product not found or already deleted!" });
@@ -227,13 +227,13 @@ router.delete("/deleteproduct/", authenticateAdmin, async (req, res) => {
 
         const productPhoto = getProduct.rows[0].photo;
 
-        // Step 2: Delete Product Photo
+        // Delete Product Photo
         const filePath = `./uploads/${productPhoto}`;
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
 
-        // Step 3: Remove Product from Database
+        // Remove Product from Database
         const query = `DELETE FROM tbproduct WHERE id = $1 RETURNING *`;
         const deleteProduct = await db.query(query, [getId]);
 
