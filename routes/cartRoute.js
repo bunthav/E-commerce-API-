@@ -103,7 +103,7 @@ router.post("/addcart/", authenticateToken, async (req, res) => {
     }
 
     try {
-        // ✅ Check if product exists & get price
+        // Check if product exists & get price
         const productCheckQuery = `SELECT price FROM tbproduct WHERE name = $1`;
         const productCheck = await db.query(productCheckQuery, [cart_productname]);
 
@@ -113,7 +113,7 @@ router.post("/addcart/", authenticateToken, async (req, res) => {
 
         const productPrice = productCheck.rows[0].price;
 
-        // ✅ Insert or Update cart
+        // Insert or Update cart
         const query = `
             INSERT INTO tbcart (cart_username, cart_productname, quantity, total_price)
             VALUES ($1, $2, $3::int, $4::numeric * $3::int)
@@ -138,7 +138,7 @@ router.post("/addcart/", authenticateToken, async (req, res) => {
 });
 
 
-// Protected POST route to add a cart
+// Protected POST route to update cart
 // http://localhost:3010/cart/updatecart/
 router.put("/updatecart/", authenticateToken, async (req, res) => {
     console.log("Received body:", req.body);
@@ -195,7 +195,7 @@ router.put("/updatecart/", authenticateToken, async (req, res) => {
     }
 });
 
-// Protected POST route to add a cart
+// Protected POST route to delete cart
 // http://localhost:3010/cart/deletecart/
 router.delete("/deletecart/", authenticateToken, async (req, res) => {
     const { cart_username } = req.body;

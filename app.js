@@ -9,8 +9,6 @@ import receipt from "./routes/receiptRoute.js";
 import cookieParser from "cookie-parser";
 import apiRateLimiter from "./apiRateLimiter.js";
 
-
-
 const app = express();
 const port = 3010;
 
